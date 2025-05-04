@@ -1,7 +1,11 @@
-use aya::programs::{tc, SchedClassifier, TcAttachType};
+use aya::{
+    maps::RingBuf,
+    programs::{tc, SchedClassifier, TcAttachType},
+};
 use clap::Parser;
 #[rustfmt::skip]
 use log::{debug, warn};
+use snisnoop_common::RawPacket;
 use tokio::signal;
 
 #[derive(Debug, Parser)]
@@ -12,6 +16,7 @@ struct Opt {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    println!("{:?}", RawPacket::LEN);
     let opt = Opt::parse();
 
     env_logger::init();
@@ -40,7 +45,6 @@ async fn main() -> anyhow::Result<()> {
         warn!("failed to initialize eBPF logger: {e}");
     }
 
-    
     let Opt { interface } = opt;
     println!("Listening on interface {interface}...");
 
@@ -51,6 +55,8 @@ async fn main() -> anyhow::Result<()> {
     let program: &mut SchedClassifier = ebpf.program_mut("snisnoop").unwrap().try_into()?;
     program.load()?;
     program.attach(&interface, TcAttachType::Egress)?;
+
+    // let ring_buf = RingBuf::try_from(ebpf.map_mut("DATA").unwrap()).unwrap();
 
     let ctrl_c = signal::ctrl_c();
     println!("Waiting for Ctrl-C...");
