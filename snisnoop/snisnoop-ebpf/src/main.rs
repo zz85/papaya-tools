@@ -4,10 +4,7 @@
 use aya_ebpf::{
     bindings::TC_ACT_PIPE,
     cty::c_long,
-    helpers::{
-        bpf_probe_read_kernel,
-        r#gen::{bpf_get_current_task, bpf_skb_load_bytes},
-    },
+    helpers::{bpf_get_current_task, bpf_probe_read_kernel, bpf_skb_load_bytes},
     macros::{classifier, map},
     maps::RingBuf,
     programs::{sk_buff::SkBuff, TcContext},
@@ -72,12 +69,10 @@ fn get_process_id(ctx: &TcContext) -> Result<u32, i64> {
 
     unsafe {
         let task = bpf_get_current_task() as *const task_struct;
-        let o = &*task;
+        use core::ptr::addr_of;
+        let tgid = bpf_probe_read_kernel(addr_of!((*task).tgid))?;
 
-        // let pid = bpf_probe_read_kernel(&o.pid as *const _ as *const u32)?;
-        let tgid = bpf_probe_read_kernel(&o.tgid as *const _ as *const u32)?;
-
-        Ok(tgid)
+        Ok(tgid as u32)
     }
 }
 
