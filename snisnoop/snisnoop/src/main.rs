@@ -2,6 +2,7 @@ use aya::{
     maps::RingBuf,
     programs::{tc, SchedClassifier, TcAttachType},
 };
+use chrono::Local;
 use clap::Parser;
 #[rustfmt::skip]
 use log::{debug, warn};
@@ -66,6 +67,13 @@ async fn main() -> anyhow::Result<()> {
         use tokio::io::unix::AsyncFd;
         let mut fd = AsyncFd::new(ring_buf).unwrap();
 
+        // First print the header
+        println!(
+            "\n{:<12} {:<8} {:<22} {:<22} {:<30}",
+            "TIME", "PID", "SOURCE", "DESTINATION", "SNI"
+        );
+        println!("{:-<94}", ""); // Adjusted separator line
+
         while let Ok(mut guard) = fd.readable_mut().await {
             match guard.try_io(|inner| {
                 let ring_buf = inner.get_mut();
@@ -78,12 +86,20 @@ async fn main() -> anyhow::Result<()> {
                     let data = &raw.data[..raw.len as usize];
 
                     debug!("User space received Raw packet with length: {}", raw.len);
-                    if let Some((src, source_port, dst, dest_port, sni_found)) =
-                        handle_raw_packet(data)
-                    {
+                    if let Some((src, source_port, dst, dest_port, sni)) = handle_raw_packet(data) {
+                        let pid = raw.tgid;
+                        // println!(
+                        //     "\t{}:{} > {}:{}\t[{}]\tSNI: {}",
+                        //     src, source_port, dst, dest_port, raw.tgid, sni_found
+                        // );
+
                         println!(
-                            "[{}:{} -> {}:{}] {}",
-                            src, source_port, dst, dest_port, sni_found
+                            "{:<12} {:<8} {:<22} {:<22} {:<30}",
+                            Local::now().format("%H:%M:%S"),
+                            pid,
+                            format!("{}:{}", src, source_port),
+                            format!("{}:{}", dst, dest_port),
+                            sni
                         );
                     }
                 }

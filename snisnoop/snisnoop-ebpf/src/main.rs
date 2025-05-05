@@ -4,18 +4,24 @@
 use aya_ebpf::{
     bindings::TC_ACT_PIPE,
     cty::c_long,
-    helpers::r#gen::{bpf_get_current_task, bpf_skb_load_bytes},
+    helpers::{
+        bpf_probe_read_kernel,
+        r#gen::{bpf_get_current_task, bpf_skb_load_bytes},
+    },
     macros::{classifier, map},
     maps::RingBuf,
     programs::{sk_buff::SkBuff, TcContext},
 };
-use aya_log_ebpf::{debug, info};
+use aya_log_ebpf::debug;
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr, Ipv6Hdr},
     tcp::TcpHdr,
 };
 use snisnoop_common::RawPacket;
+use vmlinux::task_struct;
+
+mod vmlinux;
 
 // will require >= Linux 5.8
 #[map]
@@ -30,7 +36,7 @@ pub fn snisnoop(ctx: TcContext) -> i32 {
     }
 }
 
-// Probably still buggy, see reports like
+// Probably still buggy
 #[inline]
 pub fn load_bytes2(skb: &SkBuff, offset: usize, dst: &mut [u8]) -> Result<usize, c_long> {
     let buffer_len = dst.len();
@@ -56,6 +62,25 @@ pub fn load_bytes2(skb: &SkBuff, offset: usize, dst: &mut [u8]) -> Result<usize,
     }
 }
 
+#[inline]
+fn get_process_id(ctx: &TcContext) -> Result<u32, i64> {
+    // todo: get associated process ID
+    // unfortuantely, bpf_get_current_pid_tgid() only works in Linux 6.10
+    // see https://docs.ebpf.io/linux/helper-function/bpf_get_current_pid_tgid/
+    // so we need to use bpf_get_current_task(), but we'll need the structs
+    // from linux source <include/linux/sched.h>
+
+    unsafe {
+        let task = bpf_get_current_task() as *const task_struct;
+        let o = &*task;
+
+        // let pid = bpf_probe_read_kernel(&o.pid as *const _ as *const u32)?;
+        let tgid = bpf_probe_read_kernel(&o.tgid as *const _ as *const u32)?;
+
+        Ok(tgid)
+    }
+}
+
 // we copy data to userspace so we have more flexibilty with packet parsing
 #[inline]
 fn copy_data_to_userspace(ctx: &TcContext) {
@@ -75,6 +100,7 @@ fn copy_data_to_userspace(ctx: &TcContext) {
         //     buf.discard(0);
         // }
 
+        // Looping statically and copying each byte seems to yield the best results
         for i in 0..packet.data.len() {
             if let Ok(v) = ctx.load::<u8>(i as usize) {
                 packet.data[i] = v;
@@ -83,6 +109,24 @@ fn copy_data_to_userspace(ctx: &TcContext) {
                 break;
             }
         }
+
+        if let Ok(tgid) = get_process_id(ctx) {
+            packet.tgid = tgid;
+        }
+
+        /*
+        // This is rather strange - there's no errors, but after parsing tcp, payload seems to be filled with zeros
+        unsafe {
+            let len = packet.data.len().min(ctx.len() as usize);
+            if let Ok(_) = aya_ebpf::helpers::bpf_probe_read_kernel_buf(
+                ctx.data() as *const _,
+                &mut packet.data[0..len],
+            ) {
+                // if let Ok(_) = aya_ebpf::helpers::bpf_probe_read_user_buf(ctx.data() as *const u8, &mut packet.data) {
+                // if let Ok(_) = aya_ebpf::helpers::bpf_probe_read_buf(ctx.data() as *const u8, &mut packet.data[..len]) {
+                packet.len = len as u32;
+            }
+        }*/
 
         // usage of RingBufEntry requires us to submit or discard after reserving
         if packet.len > 0 {
@@ -95,20 +139,6 @@ fn copy_data_to_userspace(ctx: &TcContext) {
 
 #[inline(always)]
 fn try_snisnoop(ctx: TcContext) -> Result<i32, c_long> {
-    // let uid = ctx.get_socket_uid();
-
-    // todo: get associated process ID
-    // unfortuantely, bpf_get_current_pid_tgid() only works in Linux 6.10
-    // see https://docs.ebpf.io/linux/helper-function/bpf_get_current_pid_tgid/
-    // so we need to use bpf_get_current_task(), but we'll need the structs
-    // from linux source <include/linux/sched.h>
-
-    // let x = unsafe {
-    //     bpf_get_current_task()
-    // };
-    // info!(
-    //     &ctx, "task struct {}", x);
-
     let len = ctx.len();
     let ethhdr: EthHdr = ctx.load(0)?;
 
@@ -125,9 +155,9 @@ fn try_snisnoop(ctx: TcContext) -> Result<i32, c_long> {
                     let src_port = u16::from_be(tcphdr.source);
                     let dst_port = u16::from_be(tcphdr.dest);
 
-                    // if dst_port != 443 {
-                    //     return Ok(TC_ACT_PIPE);
-                    // }
+                    if dst_port != 443 {
+                        return Ok(TC_ACT_PIPE);
+                    }
 
                     // tls magic byte - this is a heutristics if without optional headers
                     // points to the TLS record header byte
