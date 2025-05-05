@@ -5,10 +5,13 @@ use aya::{
 use clap::Parser;
 #[rustfmt::skip]
 use log::{debug, warn};
-use pktparse::{ethernet, ipv4, ipv6, tcp};
-use snisnoop_common::RawPacket;
-use tls_parser::{parse_tls_extensions, TlsExtension, TlsMessage, TlsMessageHandshake};
+
 use tokio::signal;
+
+use snisnoop_common::RawPacket;
+
+mod network;
+use network::handle_raw_packet;
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -57,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
     program.load()?;
     program.attach(&interface, TcAttachType::Egress)?;
 
+    // todo: move this into a ring buf file
     tokio::spawn(async move {
         let ring_buf = RingBuf::try_from(ebpf.map_mut("DATA").unwrap()).unwrap();
         use tokio::io::unix::AsyncFd;
@@ -73,84 +77,15 @@ async fn main() -> anyhow::Result<()> {
 
                     let data = &raw.data[..raw.len as usize];
 
-                    println!("User space received Raw packet with length: {}", raw.len);
-
-                    if let Ok((remaining, eth_frame)) = ethernet::parse_ethernet_frame(data) {
-                        println!("Parsed packet: {:?}", eth_frame);
-
-                        if eth_frame.ethertype == ethernet::EtherType::IPv4 {
-                            let (remaining, ip_headers) =
-                                ipv4::parse_ipv4_header(remaining).unwrap();
-                            println!("IPv4 packet {:?}", ip_headers);
-
-                            let (remaining, tcp) = tcp::parse_tcp_header(remaining).unwrap();
-                            println!("TCP packet {:?}", tcp);
-
-                            println!("Remaining {:?}", &remaining[..10.min(remaining.len())]);
-
-                            // if remaining[0] != 0x16 {
-                            //     continue;
-                            // }
-
-                            if let Ok((_remaining, tls)) =
-                                tls_parser::parse_tls_plaintext(remaining)
-                            {
-                                for msg in tls.msg {
-                                    println!("TLS msg: {:?}", msg);
-
-                                    let client_hello = match msg {
-                                        TlsMessage::Handshake(
-                                            TlsMessageHandshake::ClientHello(client_hello),
-                                        ) => client_hello,
-                                        _ => {
-                                            continue;
-                                        }
-                                    };
-
-                                    if let Ok((_, extensions)) = if let Some(ext) = client_hello.ext
-                                    {
-                                        parse_tls_extensions(ext)
-                                    } else {
-                                        continue;
-                                    } {
-                                        for ext in extensions {
-                                            match ext {
-                                                TlsExtension::SNI(sni) => {
-                                                    for (_, b) in sni {
-                                                        let sni = std::str::from_utf8(b)
-                                                            .unwrap_or("")
-                                                            .to_owned();
-                                                        println!("SNI: {}", sni);
-                                                    }
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else if eth_frame.ethertype == ethernet::EtherType::IPv6 {
-                            let (remaining, ip_headers) =
-                                ipv6::parse_ipv6_header(remaining).unwrap();
-                            println!("IPv6 packet {:?}", ip_headers);
-
-                            let (remaining, tcp) = tcp::parse_tcp_header(remaining).unwrap();
-                            println!("TCP packet {:?}", tcp);
-                        } else {
-                            println!("Unknown packet");
-                        }
-
-                        // if let Done(remaining, ipv4_packet) = ipv4::parse_ipv4_header(remaining) {
-                        // }
-                    };
-
-                    // println!("Parsed packet: {:?}", parsed);
-
-                    print!("Raw packet data:");
-                    for x in &data[..100.min(data.len())] {
-                        print!("{:02x} ", u8::from_be(*x));
+                    debug!("User space received Raw packet with length: {}", raw.len);
+                    if let Some((src, source_port, dst, dest_port, sni_found)) =
+                        handle_raw_packet(data)
+                    {
+                        println!(
+                            "[{}:{} -> {}:{}] {}",
+                            src, source_port, dst, dest_port, sni_found
+                        );
                     }
-                    println!(".");
                 }
                 Ok(())
             }) {

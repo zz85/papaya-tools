@@ -9,7 +9,7 @@ use aya_ebpf::{
     maps::RingBuf,
     programs::{sk_buff::SkBuff, TcContext},
 };
-use aya_log_ebpf::info;
+use aya_log_ebpf::{debug, info};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr, Ipv6Hdr},
@@ -66,24 +66,6 @@ fn copy_data_to_userspace(ctx: &TcContext) {
         // but ebpf verifier have just been erroring on that
         // example: https://github.com/iovisor/bcc/issues/3269
 
-        unsafe {
-            for i in 0..packet.data.len() {
-                if let Ok(v) = ctx.load::<u8>(i as usize) {
-                    packet.data[i] = v;
-                    packet.len = i as u32 + 1;
-                } else {
-                    break;
-                }
-            }
-        };
-
-        if packet.len > 0 {
-            buf.submit(0);
-        } else {
-            buf.discard(0);
-        }
-
-        // // usage of RingBufEntry requires us to submit or discard after reserving
         // if let Ok(len) = load_bytes2(&ctx.skb, 0, &mut packet.data) {
         //     info!(ctx, "load_bytes2 ok len: {}", len);
         //     packet.len = ctx.len() as u32;
@@ -92,6 +74,22 @@ fn copy_data_to_userspace(ctx: &TcContext) {
         //     info!(ctx, "load_bytes failed");
         //     buf.discard(0);
         // }
+
+        for i in 0..packet.data.len() {
+            if let Ok(v) = ctx.load::<u8>(i as usize) {
+                packet.data[i] = v;
+                packet.len = i as u32 + 1;
+            } else {
+                break;
+            }
+        }
+
+        // usage of RingBufEntry requires us to submit or discard after reserving
+        if packet.len > 0 {
+            buf.submit(0);
+        } else {
+            buf.discard(0);
+        }
     }
 }
 
@@ -127,27 +125,22 @@ fn try_snisnoop(ctx: TcContext) -> Result<i32, c_long> {
                     let src_port = u16::from_be(tcphdr.source);
                     let dst_port = u16::from_be(tcphdr.dest);
 
-                    // warning: network_types doesn't seem to take into account
-                    // ipv4 header options (should be doing header.total_len() - options..)
-                    // so this is going to work on best effort
-                    // basis
-
-                    if dst_port != 443 {
-                        return Ok(TC_ACT_PIPE);
-                    }
+                    // if dst_port != 443 {
+                    //     return Ok(TC_ACT_PIPE);
+                    // }
 
                     // tls magic byte - this is a heutristics if without optional headers
                     // points to the TLS record header byte
                     // 0x16 - TLS handshake
                     // 0x17 - TLS application data
                     // 0x15 - TLS close notify
-                    let tls_record: u8 = u8::from_be(ctx.load(66)?);
+                    let _tls_record: u8 = u8::from_be(ctx.load(66)?);
 
                     // if tls_record != 0x16 {
                     //     return Ok(TC_ACT_PIPE);
                     // }
 
-                    info!(
+                    debug!(
                         &ctx,
                         "ipv4 {}:{} -> {}:{}", src_addr, src_port, dst_addr, dst_port
                     );
@@ -164,20 +157,24 @@ fn try_snisnoop(ctx: TcContext) -> Result<i32, c_long> {
             let src = header.src_addr();
             match header.next_hdr {
                 IpProto::Tcp => {
-                    info!(&ctx, "ipv6 src {} -> {}", src, dst);
                     let tcphdr: TcpHdr = ctx.load(EthHdr::LEN + Ipv6Hdr::LEN)?;
 
                     let src_port = u16::from_be(tcphdr.source);
                     let dst_port = u16::from_be(tcphdr.dest);
+
+                    debug!(
+                        &ctx,
+                        "ipv6 src {}:{} -> {}:{}", src, src_port, dst, dst_port
+                    );
 
                     // warning: network_types doesn't seem to take into account
                     // ipv4 header options (should be doing header.total_len() - options..)
                     // so this is going to work on best effort
                     // basis
 
-                    if dst_port != 443 {
-                        return Ok(TC_ACT_PIPE);
-                    }
+                    // if dst_port != 443 {
+                    //     return Ok(TC_ACT_PIPE);
+                    // }
 
                     copy_data_to_userspace(&ctx);
                 }
@@ -187,7 +184,7 @@ fn try_snisnoop(ctx: TcContext) -> Result<i32, c_long> {
         _ => return Ok(TC_ACT_PIPE),
     };
 
-    info!(&ctx, "received a packet with len: {}", len);
+    debug!(&ctx, "received a packet with len: {}", len);
 
     Ok(TC_ACT_PIPE)
 }
