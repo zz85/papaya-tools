@@ -7,6 +7,7 @@ use clap::Parser;
 use log::{debug, warn};
 use pktparse::{ethernet, ipv4, ipv6, tcp};
 use snisnoop_common::RawPacket;
+use tls_parser::{parse_tls_extensions, TlsExtension, TlsMessage, TlsMessageHandshake};
 use tokio::signal;
 
 #[derive(Debug, Parser)]
@@ -86,6 +87,48 @@ async fn main() -> anyhow::Result<()> {
                             println!("TCP packet {:?}", tcp);
 
                             println!("Remaining {:?}", &remaining[..10.min(remaining.len())]);
+
+                            // if remaining[0] != 0x16 {
+                            //     continue;
+                            // }
+
+                            if let Ok((_remaining, tls)) =
+                                tls_parser::parse_tls_plaintext(remaining)
+                            {
+                                for msg in tls.msg {
+                                    println!("TLS msg: {:?}", msg);
+
+                                    let client_hello = match msg {
+                                        TlsMessage::Handshake(
+                                            TlsMessageHandshake::ClientHello(client_hello),
+                                        ) => client_hello,
+                                        _ => {
+                                            continue;
+                                        }
+                                    };
+
+                                    if let Ok((_, extensions)) = if let Some(ext) = client_hello.ext
+                                    {
+                                        parse_tls_extensions(ext)
+                                    } else {
+                                        continue;
+                                    } {
+                                        for ext in extensions {
+                                            match ext {
+                                                TlsExtension::SNI(sni) => {
+                                                    for (_, b) in sni {
+                                                        let sni = std::str::from_utf8(b)
+                                                            .unwrap_or("")
+                                                            .to_owned();
+                                                        println!("SNI: {}", sni);
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         } else if eth_frame.ethertype == ethernet::EtherType::IPv6 {
                             let (remaining, ip_headers) =
                                 ipv6::parse_ipv6_header(remaining).unwrap();
