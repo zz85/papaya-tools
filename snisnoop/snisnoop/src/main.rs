@@ -7,6 +7,7 @@ use clap::Parser;
 use log::{debug, warn};
 use snisnoop_common::RawPacket;
 use tokio::signal;
+use zero_packet::packet::parser::PacketParser;
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -70,6 +71,16 @@ async fn main() -> anyhow::Result<()> {
                     };
 
                     println!("User space received Raw packet with length: {}", raw.len);
+
+                    let parsed = PacketParser::parse(&raw.data[..raw.len as usize]);
+
+                    println!("Parsed packet: {:?}", parsed);
+
+                    print!("Raw packet data:");
+                    for x in &raw.data[..100] {
+                        print!("{:02x} ", u8::from_be(*x));
+                    }
+                    println!(".");
                 }
                 Ok(())
             }) {
