@@ -136,6 +136,17 @@ fn try_snisnoop(ctx: TcContext) -> Result<i32, c_long> {
                         return Ok(TC_ACT_PIPE);
                     }
 
+                    // tls magic byte - this is a heutristics if without optional headers
+                    // points to the TLS record header byte
+                    // 0x16 - TLS handshake
+                    // 0x17 - TLS application data
+                    // 0x15 - TLS close notify
+                    let tls_record: u8 = u8::from_be(ctx.load(66)?);
+
+                    // if tls_record != 0x16 {
+                    //     return Ok(TC_ACT_PIPE);
+                    // }
+
                     info!(
                         &ctx,
                         "ipv4 {}:{} -> {}:{}", src_addr, src_port, dst_addr, dst_port
@@ -155,6 +166,20 @@ fn try_snisnoop(ctx: TcContext) -> Result<i32, c_long> {
                 IpProto::Tcp => {
                     info!(&ctx, "ipv6 src {} -> {}", src, dst);
                     let tcphdr: TcpHdr = ctx.load(EthHdr::LEN + Ipv6Hdr::LEN)?;
+
+                    let src_port = u16::from_be(tcphdr.source);
+                    let dst_port = u16::from_be(tcphdr.dest);
+
+                    // warning: network_types doesn't seem to take into account
+                    // ipv4 header options (should be doing header.total_len() - options..)
+                    // so this is going to work on best effort
+                    // basis
+
+                    if dst_port != 443 {
+                        return Ok(TC_ACT_PIPE);
+                    }
+
+                    copy_data_to_userspace(&ctx);
                 }
                 _ => return Ok(TC_ACT_PIPE),
             };

@@ -5,9 +5,9 @@ use aya::{
 use clap::Parser;
 #[rustfmt::skip]
 use log::{debug, warn};
+use pktparse::{ethernet, ipv4, ipv6, tcp};
 use snisnoop_common::RawPacket;
 use tokio::signal;
-use zero_packet::packet::parser::PacketParser;
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -70,14 +70,41 @@ async fn main() -> anyhow::Result<()> {
                         &*ptr
                     };
 
+                    let data = &raw.data[..raw.len as usize];
+
                     println!("User space received Raw packet with length: {}", raw.len);
 
-                    let parsed = PacketParser::parse(&raw.data[..raw.len as usize]);
+                    if let Ok((remaining, eth_frame)) = ethernet::parse_ethernet_frame(data) {
+                        println!("Parsed packet: {:?}", eth_frame);
 
-                    println!("Parsed packet: {:?}", parsed);
+                        if eth_frame.ethertype == ethernet::EtherType::IPv4 {
+                            let (remaining, ip_headers) =
+                                ipv4::parse_ipv4_header(remaining).unwrap();
+                            println!("IPv4 packet {:?}", ip_headers);
+
+                            let (remaining, tcp) = tcp::parse_tcp_header(remaining).unwrap();
+                            println!("TCP packet {:?}", tcp);
+
+                            println!("Remaining {:?}", &remaining[..10.min(remaining.len())]);
+                        } else if eth_frame.ethertype == ethernet::EtherType::IPv6 {
+                            let (remaining, ip_headers) =
+                                ipv6::parse_ipv6_header(remaining).unwrap();
+                            println!("IPv6 packet {:?}", ip_headers);
+
+                            let (remaining, tcp) = tcp::parse_tcp_header(remaining).unwrap();
+                            println!("TCP packet {:?}", tcp);
+                        } else {
+                            println!("Unknown packet");
+                        }
+
+                        // if let Done(remaining, ipv4_packet) = ipv4::parse_ipv4_header(remaining) {
+                        // }
+                    };
+
+                    // println!("Parsed packet: {:?}", parsed);
 
                     print!("Raw packet data:");
-                    for x in &raw.data[..100] {
+                    for x in &data[..100.min(data.len())] {
                         print!("{:02x} ", u8::from_be(*x));
                     }
                     println!(".");

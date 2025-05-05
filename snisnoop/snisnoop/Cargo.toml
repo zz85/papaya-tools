@@ -22,7 +22,7 @@ tokio = { workspace = true, features = [
     "signal",
 ] }
 clap = { workspace = true, features = ["derive"] }
-zero-packet = "0.1.0"
+pktparse = "0.7.1"
 [build-dependencies]
 anyhow = { workspace = true }
 aya-build = { workspace = true }
