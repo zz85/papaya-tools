@@ -22,6 +22,8 @@ tokio = { workspace = true, features = [
     "signal",
 ] }
 clap = { workspace = true, features = ["derive"] }
+pktparse = "0.7.1"
+tls-parser = "0.12.2"
 [build-dependencies]
 anyhow = { workspace = true }
 aya-build = { workspace = true }

@@ -5,8 +5,13 @@ use aya::{
 use clap::Parser;
 #[rustfmt::skip]
 use log::{debug, warn};
-use snisnoop_common::RawPacket;
+
 use tokio::signal;
+
+use snisnoop_common::RawPacket;
+
+mod network;
+use network::handle_raw_packet;
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -16,7 +21,6 @@ struct Opt {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    println!("{:?}", RawPacket::LEN);
     let opt = Opt::parse();
 
     env_logger::init();
@@ -56,7 +60,43 @@ async fn main() -> anyhow::Result<()> {
     program.load()?;
     program.attach(&interface, TcAttachType::Egress)?;
 
-    // let ring_buf = RingBuf::try_from(ebpf.map_mut("DATA").unwrap()).unwrap();
+    // todo: move this into a ring buf file
+    tokio::spawn(async move {
+        let ring_buf = RingBuf::try_from(ebpf.map_mut("DATA").unwrap()).unwrap();
+        use tokio::io::unix::AsyncFd;
+        let mut fd = AsyncFd::new(ring_buf).unwrap();
+
+        while let Ok(mut guard) = fd.readable_mut().await {
+            match guard.try_io(|inner| {
+                let ring_buf = inner.get_mut();
+                while let Some(item) = ring_buf.next() {
+                    let raw: &RawPacket = unsafe {
+                        let ptr = item.as_ptr() as *const RawPacket;
+                        &*ptr
+                    };
+
+                    let data = &raw.data[..raw.len as usize];
+
+                    debug!("User space received Raw packet with length: {}", raw.len);
+                    if let Some((src, source_port, dst, dest_port, sni_found)) =
+                        handle_raw_packet(data)
+                    {
+                        println!(
+                            "[{}:{} -> {}:{}] {}",
+                            src, source_port, dst, dest_port, sni_found
+                        );
+                    }
+                }
+                Ok(())
+            }) {
+                Ok(_) => {
+                    guard.clear_ready();
+                    continue;
+                }
+                Err(_would_block) => continue,
+            }
+        }
+    });
 
     let ctrl_c = signal::ctrl_c();
     println!("Waiting for Ctrl-C...");
