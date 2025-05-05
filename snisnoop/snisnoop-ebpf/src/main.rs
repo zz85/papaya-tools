@@ -19,7 +19,7 @@ use snisnoop_common::RawPacket;
 
 // will require >= Linux 5.8
 #[map]
-static DATA: RingBuf = RingBuf::with_byte_size(100 * RawPacket::LEN as u32, 0);
+static DATA: RingBuf = RingBuf::with_byte_size(1000 * RawPacket::LEN as u32, 0);
 
 #[classifier]
 #[inline]
@@ -30,17 +30,23 @@ pub fn snisnoop(ctx: TcContext) -> i32 {
     }
 }
 
+// Probably still buggy, see reports like
 #[inline]
 pub fn load_bytes2(skb: &SkBuff, offset: usize, dst: &mut [u8]) -> Result<usize, c_long> {
-    let lesser_len = dst.len().min(skb.len() as usize - offset);
+    let buffer_len = dst.len();
+    let sk_len = skb.len() as usize;
+    let lesser_len = buffer_len.min(skb.len() as usize);
+    // these checks doesn't help the verifier :(
+    // if sk_len == 0 || sk_len >= buffer_len {
+    //     return Err(0);
+    // }
 
-    let x = dst.len();
     let ret = unsafe {
         bpf_skb_load_bytes(
             skb.skb as *const _,
             offset as u32,
             dst.as_mut_ptr() as *mut _,
-            x as u32,
+            buffer_len as u32,
         )
     };
     if ret == 0 {
@@ -58,14 +64,34 @@ fn copy_data_to_userspace(ctx: &TcContext) {
 
         // fixme: ideally, we should be able to use ctx.load_bytes(0, &mut packet.data)
         // but ebpf verifier have just been erroring on that
+        // example: https://github.com/iovisor/bcc/issues/3269
 
-        // usage of RingBufEntry requires us to submit or discard after reserving
-        if let Ok(len) = load_bytes2(&ctx.skb, 0, &mut packet.data) {
-            packet.len = len as u32;
+        unsafe {
+            for i in 0..packet.data.len() {
+                if let Ok(v) = ctx.load::<u8>(i as usize) {
+                    packet.data[i] = v;
+                    packet.len = i as u32 + 1;
+                } else {
+                    break;
+                }
+            }
+        };
+
+        if packet.len > 0 {
             buf.submit(0);
         } else {
             buf.discard(0);
         }
+
+        // // usage of RingBufEntry requires us to submit or discard after reserving
+        // if let Ok(len) = load_bytes2(&ctx.skb, 0, &mut packet.data) {
+        //     info!(ctx, "load_bytes2 ok len: {}", len);
+        //     packet.len = ctx.len() as u32;
+        //     buf.submit(0);
+        // } else {
+        //     info!(ctx, "load_bytes failed");
+        //     buf.discard(0);
+        // }
     }
 }
 
@@ -85,6 +111,7 @@ fn try_snisnoop(ctx: TcContext) -> Result<i32, c_long> {
     // info!(
     //     &ctx, "task struct {}", x);
 
+    let len = ctx.len();
     let ethhdr: EthHdr = ctx.load(0)?;
 
     match ethhdr.ether_type {
@@ -135,7 +162,7 @@ fn try_snisnoop(ctx: TcContext) -> Result<i32, c_long> {
         _ => return Ok(TC_ACT_PIPE),
     };
 
-    info!(&ctx, "received a packet");
+    info!(&ctx, "received a packet with len: {}", len);
 
     Ok(TC_ACT_PIPE)
 }

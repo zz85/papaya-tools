@@ -2,9 +2,10 @@
 
 use core::mem;
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct RawPacket {
-    pub data: [u8; 1500],
+    pub data: [u8; 3000],
     pub len: u32,
 }
 
