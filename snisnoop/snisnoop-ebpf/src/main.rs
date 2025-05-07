@@ -26,6 +26,17 @@ static DATA: RingBuf = RingBuf::with_byte_size(1000 * RawPacket::LEN as u32, 0);
 
 #[classifier]
 #[inline]
+/// Entry point for the traffic classifier eBPF program.
+///
+/// Processes a network packet from the traffic control context and returns the result of classification.
+/// Returns -1 if an error occurs during packet processing.
+///
+/// # Examples
+///
+/// ```
+/// // This function is intended to be attached as a classifier in an eBPF program.
+/// // Usage is managed by the eBPF framework and not called directly in userspace.
+/// ```
 pub fn snisnoop(ctx: TcContext) -> i32 {
     match try_snisnoop(ctx) {
         Ok(ret) => ret,
@@ -34,6 +45,16 @@ pub fn snisnoop(ctx: TcContext) -> i32 {
 }
 
 #[inline]
+/// Retrieves the current process ID (tgid) from the kernel task struct.
+///
+/// Returns the thread group ID (tgid) of the process associated with the current context, or an error code if retrieval fails.
+///
+/// # Examples
+///
+/// ```
+/// let pid = get_process_id();
+/// assert!(pid.is_ok());
+/// ```
 fn get_process_id() -> Result<u32, i64> {
     // get associated process ID
     // unfortuantely, bpf_get_current_pid_tgid() only works in Linux 6.10
@@ -52,6 +73,17 @@ fn get_process_id() -> Result<u32, i64> {
 
 // we copy data to userspace so we have more flexibilty with packet parsing
 #[inline]
+/// Copies packet data and process ID from the traffic control context to userspace via a ring buffer.
+///
+/// Reserves space in the `DATA` ring buffer for a `RawPacket`, loads packet bytes from the context if the packet is at least 2 bytes long, sets the process ID, and submits the buffer to userspace. If the packet is too short, the buffer is discarded.
+///
+/// # Examples
+///
+/// ```
+/// // Called within an eBPF classifier context:
+/// copy_data_to_userspace(&ctx);
+/// // Packet data and process ID are sent to userspace for further analysis.
+/// ```
 fn copy_data_to_userspace(ctx: &TcContext) {
     if let Some(mut buf) = DATA.reserve::<RawPacket>(0) {
         let packet = unsafe { buf.assume_init_mut() };
