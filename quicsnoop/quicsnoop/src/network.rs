@@ -26,27 +26,24 @@ pub fn parse_ether(packet: &[u8]) -> Result<(), &str> {
         let destination = ipv4.header().destination_addr();
         let source = ipv4.header().source_addr();
         println!(
-            "IPv4 {}:{} -> {}:{}",
-            source, source_port, destination, destination_port
+            "IPv4 {}:{} -> {}:{}. SNI: {}",
+            source, source_port, destination, destination_port, sni
         );
     } else if net.is_ipv6() {
         let ipv6 = net.ipv6_ref().ok_or("no ipv4")?;
         let destination = ipv6.header().destination_addr();
         let source = ipv6.header().source_addr();
         println!(
-            "IPv6 {}:{} -> {}:{}",
-            source, source_port, destination, destination_port
+            "IPv6 {}:{} -> {}:{}. SNI {}",
+            source, source_port, destination, destination_port, sni
         );
     }
 
     // println!("UDP {:?}", udp.to_header());
-
-    // println!("UDP payload {:?}", &payload[0..10]);
     // println!(
     //     "IP {:?}",
     //     &net.ip_payload_ref().ok_or("no ip payload")?.payload[0..12]
     // );
-
     // let ip_payload = ether.ip_payload().ok_or("ip")?;
 
     Ok(())

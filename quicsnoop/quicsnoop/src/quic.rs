@@ -1,4 +1,7 @@
+use std::sync::Mutex;
+
 use log::{debug, info};
+use quick_cache::unsync::Cache;
 use s2n_codec::DecoderBufferMut;
 use s2n_quic_core::{
     connection::id::ConnectionInfo,
@@ -14,8 +17,12 @@ use tls_parser::{
 
 // imported from https://github.com/zz85/packet_radar/commit/3bfd50ebe3b3e0a3077843ec40746dfcc7ec7053
 
+use std::sync::LazyLock;
+static QUIC_CACHE: LazyLock<Mutex<Cache<Vec<u8>, CryptoAssembler>>> =
+    LazyLock::new(|| Mutex::new(Cache::new(50)));
+
 pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
-    let mut data = [0; 3500];
+    let mut data = [0; 9000]; // just in casae
     debug!("QUIC Packet len {}", packet.len());
     let decode_buffer = &mut data[..packet.len()];
     decode_buffer.copy_from_slice(packet);
@@ -23,6 +30,8 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
     let payload = DecoderBufferMut::new(decode_buffer);
     let remote_address = SocketAddress::default();
     let connection_info = ConnectionInfo::new(&remote_address);
+
+    // TODO: decryption for intial packet > #1 requires additional work
 
     let (packet, _remaining) = ProtectedPacket::decode(payload, &connection_info, &0).ok()?;
 
@@ -56,14 +65,18 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
         .ok()?;
 
     let packet_number = clear_initial.packet_number;
-    let dcid = clear_initial.destination_connection_id();
+    let dcid = clear_initial.destination_connection_id().to_vec();
     let scid = clear_initial.source_connection_id();
 
     debug!("QUIC Packet version {version}. #{packet_number}. scid {scid:02x?} -> dcid {dcid:02x?}");
 
     let mut payload = clear_initial.payload;
-    //QUIC_CACHE.get(&dcid).unwrap_or(
-    let mut crypto = CryptoAssembler::new();
+    let mut cache = QUIC_CACHE.lock().unwrap();
+
+    let mut crypto = cache
+        .get_mut_or_insert_with(&dcid, || Ok::<_, std::io::Error>(CryptoAssembler::new()))
+        .unwrap()
+        .unwrap();
 
     // iterate frames from the QUIC packet
     while !payload.is_empty() {
@@ -77,12 +90,11 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
     }
 
     if !crypto.completed() {
-        println!("QUIC Crypto incomplete");
-        // QUIC_CACHE.insert(dcid, crypto);
+        info!("QUIC Crypto incomplete");
         return None;
     }
 
-    println!("QUIC Crypto completed. Parsing Client hello..");
+    info!("QUIC Crypto completed. Parsing Client hello..");
     let (_, msg) = parse_tls_message_handshake(crypto.get_bytes())
         .map_err(|e| info!("Cannot parse {e:?}"))
         .ok()?;
@@ -91,7 +103,7 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
         return Err("No client hello").ok();
     };
 
-    let (_, extensions) = parse_tls_extensions(&client_hello.ext?).ok()?;
+    let (_, extensions) = parse_tls_extensions(client_hello.ext?).ok()?;
 
     // find the sni
     let sni = extensions
@@ -105,7 +117,11 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
         })
         .unwrap_or("<no sni>".to_string());
 
-    println!("SNI: {sni}");
+    info!("SNI: {sni}");
+
+    // remove from cache
+    drop(crypto);
+    cache.remove(&dcid);
 
     Some(sni)
 }

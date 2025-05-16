@@ -27,6 +27,7 @@ s2n-quic-core = "0.58.0"
 s2n-codec = "0.58.0"
 s2n-quic-crypto = "0.58.0"
 tls-parser = "0.12.2"
+quick_cache = "0.6.14"
 [build-dependencies]
 anyhow = { workspace = true }
 aya-build = { workspace = true }

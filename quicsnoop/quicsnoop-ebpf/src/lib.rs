@@ -48,7 +48,7 @@ pub fn parse_packet(ctx: &TcContext) -> Result<bool, i64> {
                         parse as u8
                     );
 
-                    let ret = copy_data_to_userspace(&ctx);
+                    let ret = copy_data_to_userspace(ctx);
 
                     info!(ctx, "len {} - {}", ctx.len(), ret as u8);
                 }
@@ -73,7 +73,7 @@ pub fn parse_packet(ctx: &TcContext) -> Result<bool, i64> {
                         "ipv6 src {}:{} -> {}:{} flag: {}", src, src_port, dst, dst_port, flag
                     );
 
-                    copy_data_to_userspace(&ctx);
+                    copy_data_to_userspace(ctx);
                 }
                 _ => return Ok(false),
             };
