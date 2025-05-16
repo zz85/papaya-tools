@@ -2,7 +2,7 @@
 
 use core::mem;
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct QuicPacket {
     /// Fix size allocation for packet data
@@ -11,5 +11,5 @@ pub struct QuicPacket {
 }
 
 impl QuicPacket {
-    pub const LEN: usize = mem::size_of::<QuicPacket>();
+    pub const STRUCT_SIZE: usize = mem::size_of::<QuicPacket>();
 }

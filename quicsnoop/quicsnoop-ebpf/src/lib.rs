@@ -14,7 +14,7 @@ use quicsnoop_common::QuicPacket;
 const QUIC_LONG_PACKET_TYPE_MASK: u8 = 0x30;
 
 #[map]
-static DATA: RingBuf = RingBuf::with_byte_size(1000 * QuicPacket::LEN as u32, 0);
+static DATA: RingBuf = RingBuf::with_byte_size(1000 * QuicPacket::STRUCT_SIZE as u32, 0);
 
 #[inline]
 pub fn parse_packet(ctx: &TcContext) -> Result<bool, i64> {
