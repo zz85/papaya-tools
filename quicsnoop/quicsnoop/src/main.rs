@@ -58,11 +58,13 @@ async fn main() -> anyhow::Result<()> {
     let _ = tc::qdisc_add_clsact(&iface);
     let program: &mut SchedClassifier = ebpf.program_mut("quicsnoop").unwrap().try_into()?;
     program.load()?;
-    if egress {
-        program.attach(&iface, TcAttachType::Egress)?;
+
+    let attach_type = if egress {
+        TcAttachType::Egress
     } else {
-        program.attach(&iface, TcAttachType::Ingress)?;
-    }
+        TcAttachType::Ingress
+    };
+    program.attach(&iface, attach_type)?;
 
     // Receive packets
     tokio::spawn(async move {
@@ -82,7 +84,9 @@ async fn main() -> anyhow::Result<()> {
                     let data = &raw.data[..raw.len as usize];
 
                     info!("User space received Raw packet with length: {}", raw.len);
-                    let _ = parse_ether(data);
+                    if let Err(e) = parse_ether(data) {
+                        debug!("Failed to parse packet: {}", e);
+                    }
                 }
                 Ok(())
             }) {

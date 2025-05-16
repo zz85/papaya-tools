@@ -34,8 +34,8 @@ pub fn parse_packet(ctx: &TcContext) -> Result<bool, i64> {
 
                     let flag: u8 = ctx.load(EthHdr::LEN + Ipv4Hdr::LEN + UdpHdr::LEN)?;
 
-                    // TODO confirm calculation
-                    let parse = flag & QUIC_LONG_PACKET_TYPE_MASK == 0;
+                    // Long header (bit 7 set) and Initial packet type (bits 4-5 are 00)
+                    let parse = (flag & 0x80) != 0 && (flag & QUIC_LONG_PACKET_TYPE_MASK) == 0;
 
                     info!(
                         ctx,
@@ -48,9 +48,10 @@ pub fn parse_packet(ctx: &TcContext) -> Result<bool, i64> {
                         parse as u8
                     );
 
-                    let ret = copy_data_to_userspace(ctx);
-
-                    info!(ctx, "len {} - {}", ctx.len(), ret as u8);
+                    info!(ctx, "len {}. Should parse? {}", ctx.len(), parse as u8);
+                    if parse {
+                        let _ = copy_data_to_userspace(ctx);
+                    }
                 }
                 _ => return Ok(false),
             };
@@ -66,14 +67,18 @@ pub fn parse_packet(ctx: &TcContext) -> Result<bool, i64> {
                     let src_port = udp.source();
                     let dst_port = udp.dest();
 
-                    let flag: u8 = ctx.load(EthHdr::LEN + Ipv4Hdr::LEN + UdpHdr::LEN)?;
+                    let flag: u8 = ctx.load(EthHdr::LEN + Ipv6Hdr::LEN + UdpHdr::LEN)?;
+                    // Long header (bit 7 set) and Initial packet type (bits 4-5 are 00)
+                    let parse = (flag & 0x80) != 0 && (flag & QUIC_LONG_PACKET_TYPE_MASK) == 0;
 
-                    info!(
-                        ctx,
-                        "ipv6 src {}:{} -> {}:{} flag: {}", src, src_port, dst, dst_port, flag
-                    );
+                    if parse {
+                        info!(
+                            ctx,
+                            "ipv6 src {}:{} -> {}:{} flag: {}", src, src_port, dst, dst_port, flag
+                        );
 
-                    copy_data_to_userspace(ctx);
+                        copy_data_to_userspace(ctx);
+                    }
                 }
                 _ => return Ok(false),
             };

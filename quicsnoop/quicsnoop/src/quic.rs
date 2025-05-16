@@ -22,7 +22,7 @@ static QUIC_CACHE: LazyLock<Mutex<Cache<Vec<u8>, CryptoAssembler>>> =
     LazyLock::new(|| Mutex::new(Cache::new(50)));
 
 pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
-    let mut data = [0; 9000]; // just in casae
+    let mut data = [0; 9000]; // jumbo frame just in case
     debug!("QUIC Packet len {}", packet.len());
     let decode_buffer = &mut data[..packet.len()];
     decode_buffer.copy_from_slice(packet);
@@ -80,7 +80,11 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
 
     // iterate frames from the QUIC packet
     while !payload.is_empty() {
-        let (frame, remaining) = payload.decode::<FrameMut>().unwrap();
+        let Ok((frame, remaining)) = payload.decode::<FrameMut>() else {
+            info!("Failed to decode QUIC frame – skipping packet");
+            break;
+        };
+
         if let Frame::Crypto(frame) = frame {
             // handle_crypto_frame
             crypto.add_frame(frame);

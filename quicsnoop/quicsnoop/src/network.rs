@@ -2,7 +2,16 @@ use etherparse::SlicedPacket;
 
 use crate::quic::decode_quic_initial_packet;
 
-pub fn parse_ether(packet: &[u8]) -> Result<(), &str> {
+#[derive(Debug)]
+pub struct QuicPacketInfo {
+    pub source_ip: String,
+    pub source_port: u16,
+    pub destination_ip: String,
+    pub destination_port: u16,
+    pub sni: String,
+}
+
+pub fn parse_ether(packet: &[u8]) -> Result<QuicPacketInfo, &str> {
     let ether = SlicedPacket::from_ethernet(packet).map_err(|_e| "cannot parse ethernet frame")?;
     let net = ether.net.ok_or("no net layer")?;
 
@@ -21,30 +30,35 @@ pub fn parse_ether(packet: &[u8]) -> Result<(), &str> {
     let payload = udp.payload();
     let sni = decode_quic_initial_packet(payload).ok_or("unable to decode quic inital packet")?;
 
-    if net.is_ipv4() {
+    let (source_ip, destination_ip) = if net.is_ipv4() {
         let ipv4 = net.ipv4_ref().ok_or("no ipv4")?;
-        let destination = ipv4.header().destination_addr();
-        let source = ipv4.header().source_addr();
-        println!(
-            "IPv4 {}:{} -> {}:{}. SNI: {}",
-            source, source_port, destination, destination_port, sni
-        );
+        let destination = ipv4.header().destination_addr().to_string();
+        let source = ipv4.header().source_addr().to_string();
+        (source, destination)
     } else if net.is_ipv6() {
-        let ipv6 = net.ipv6_ref().ok_or("no ipv4")?;
-        let destination = ipv6.header().destination_addr();
-        let source = ipv6.header().source_addr();
-        println!(
-            "IPv6 {}:{} -> {}:{}. SNI {}",
-            source, source_port, destination, destination_port, sni
-        );
-    }
+        let ipv6 = net.ipv6_ref().ok_or("no ipv6")?;
+        let destination = ipv6.header().destination_addr().to_string();
+        let source = ipv6.header().source_addr().to_string();
+        (source, destination)
+    } else {
+        return Err("unsupported IP protocol");
+    };
 
-    // println!("UDP {:?}", udp.to_header());
-    // println!(
-    //     "IP {:?}",
-    //     &net.ip_payload_ref().ok_or("no ip payload")?.payload[0..12]
-    // );
-    // let ip_payload = ether.ip_payload().ok_or("ip")?;
+    log::info!(
+        "{} {}:{} -> {}:{}. SNI: {}",
+        if net.is_ipv4() { "IPv4" } else { "IPv6" },
+        source_ip,
+        source_port,
+        destination_ip,
+        destination_port,
+        sni
+    );
 
-    Ok(())
+    Ok(QuicPacketInfo {
+        source_ip,
+        source_port,
+        destination_ip,
+        destination_port,
+        sni: sni.to_string(),
+    })
 }
