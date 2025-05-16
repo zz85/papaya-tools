@@ -44,7 +44,7 @@ pub fn parse_ether(packet: &[u8]) -> Result<QuicPacketInfo, &str> {
         return Err("unsupported IP protocol");
     };
 
-    log::info!(
+    println!(
         "{} {}:{} -> {}:{}. SNI: {}",
         if net.is_ipv4() { "IPv4" } else { "IPv6" },
         source_ip,

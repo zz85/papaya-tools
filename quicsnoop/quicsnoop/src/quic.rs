@@ -1,7 +1,7 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use log::{debug, info};
-use quick_cache::unsync::Cache;
+use quick_cache::sync::Cache;
 use s2n_codec::DecoderBufferMut;
 use s2n_quic_core::{
     connection::id::ConnectionInfo,
@@ -18,8 +18,8 @@ use tls_parser::{
 // imported from https://github.com/zz85/packet_radar/commit/3bfd50ebe3b3e0a3077843ec40746dfcc7ec7053
 
 use std::sync::LazyLock;
-static QUIC_CACHE: LazyLock<Mutex<Cache<Vec<u8>, CryptoAssembler>>> =
-    LazyLock::new(|| Mutex::new(Cache::new(50)));
+static QUIC_CACHE: LazyLock<Cache<Vec<u8>, Arc<Mutex<CryptoAssembler>>>> =
+    LazyLock::new(|| Cache::new(50));
 
 pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
     let mut data = [0; 9000]; // jumbo frame just in case
@@ -49,14 +49,14 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
         protected_packet.destination_connection_id(),
     );
 
-    let intial_encrypted = protected_packet
+    let initial_encrypted = protected_packet
         .unprotect(&initial_header_key, Default::default())
         .map_err(|e| {
             info!("cannot unprotect {e}");
         })
         .ok()?;
 
-    let clear_initial = intial_encrypted
+    let clear_initial = initial_encrypted
         .decrypt(&initial_key)
         .map_err(|err| {
             info!("cannot decrypt {err}");
@@ -71,12 +71,15 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
     debug!("QUIC Packet version {version}. #{packet_number}. scid {scid:02x?} -> dcid {dcid:02x?}");
 
     let mut payload = clear_initial.payload;
-    let mut cache = QUIC_CACHE.lock().unwrap();
 
-    let mut crypto = cache
-        .get_mut_or_insert_with(&dcid, || Ok::<_, std::io::Error>(CryptoAssembler::new()))
-        .unwrap()
+    let crypto = QUIC_CACHE
+        .get_or_insert_with(&dcid, || {
+            let crypto = CryptoAssembler::new();
+            Ok::<_, std::io::Error>(Arc::new(Mutex::new(crypto)))
+        })
         .unwrap();
+
+    let mut crypto = crypto.lock().unwrap();
 
     // iterate frames from the QUIC packet
     while !payload.is_empty() {
@@ -125,7 +128,7 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
 
     // remove from cache
     drop(crypto);
-    cache.remove(&dcid);
+    QUIC_CACHE.remove(&dcid);
 
     Some(sni)
 }
