@@ -7,8 +7,8 @@ Experimental collection of eBPF / aya / network / system / tracing utilities
 |--------------|---------------------------------------|
 | [profile-bee](https://github.com/zz85/profile-bee/)  | CPU profiling                         |
 | [tcc-trace](https://github.com/zz85/tcc-trace)    | Peek at congestion control changes    |
-| [snisnoop](snisnoop)     | Find outgoing TLS domains             |
-
+| [snisnoop](snisnoop)     | Find processes and domains for outgoing TLS handshakes             |
+| [quicsnoop](quicsnoop)     | Find SNI of initial QUIC packets                 |
 
 #### snisnoop - short for TLS SNI (Server Name Indication) Snoop.
 
