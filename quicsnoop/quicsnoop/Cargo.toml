@@ -26,6 +26,7 @@ etherparse = "0.18.0"
 s2n-quic-core = "0.58.0"
 s2n-codec = "0.58.0"
 s2n-quic-crypto = "0.58.0"
+tls-parser = "0.12.2"
 [build-dependencies]
 anyhow = { workspace = true }
 aya-build = { workspace = true }

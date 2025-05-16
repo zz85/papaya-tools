@@ -7,12 +7,16 @@ use s2n_quic_core::{
     inet::SocketAddress,
     packet::ProtectedPacket,
 };
+use tls_parser::{
+    parse_tls_extensions, parse_tls_message_handshake, TlsExtension, TlsMessage,
+    TlsMessageHandshake,
+};
 
 // imported from https://github.com/zz85/packet_radar/commit/3bfd50ebe3b3e0a3077843ec40746dfcc7ec7053
 
-pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<()> {
-    let mut data = [0; 1500];
-    println!("QUIC Packet len {}", packet.len());
+pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<String> {
+    let mut data = [0; 3500];
+    debug!("QUIC Packet len {}", packet.len());
     let decode_buffer = &mut data[..packet.len()];
     decode_buffer.copy_from_slice(packet);
 
@@ -72,23 +76,38 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<()> {
         payload = remaining;
     }
 
-    if crypto.completed() {
-        println!("QUIC Crypto completed");
-        // let (_, msg) = parse_tls_message_handshake(crypto.get_bytes())
-        //     .map_err(|e| info!("Cannot parse {e:?}"))
-        //     .ok()?;
-
-        // if let TlsMessage::Handshake(TlsMessageHandshake::ClientHello(client_hello)) = msg {
-        //     let ch = process_client_hello(client_hello);
-
-        //     info!("QUIC {ch:?}");
-        //     return Some(ch);
-        // }
-    } else {
+    if !crypto.completed() {
+        println!("QUIC Crypto incomplete");
         // QUIC_CACHE.insert(dcid, crypto);
+        return None;
     }
 
-    None
+    println!("QUIC Crypto completed. Parsing Client hello..");
+    let (_, msg) = parse_tls_message_handshake(crypto.get_bytes())
+        .map_err(|e| info!("Cannot parse {e:?}"))
+        .ok()?;
+
+    let TlsMessage::Handshake(TlsMessageHandshake::ClientHello(client_hello)) = msg else {
+        return Err("No client hello").ok();
+    };
+
+    let (_, extensions) = parse_tls_extensions(&client_hello.ext?).ok()?;
+
+    // find the sni
+    let sni = extensions
+        .iter()
+        .find_map(|ext| match ext {
+            TlsExtension::SNI(sni) => sni.iter().find_map(|(_, b)| {
+                let sni = std::str::from_utf8(b).map(|s| s.to_owned()).ok();
+                sni
+            }),
+            _ => None,
+        })
+        .unwrap_or("<no sni>".to_string());
+
+    println!("SNI: {sni}");
+
+    Some(sni)
 }
 
 /// we should probably use s2n_quic_core::buffer::Reassembler

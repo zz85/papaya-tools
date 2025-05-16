@@ -3,6 +3,7 @@ use aya::{
     programs::{tc, SchedClassifier, TcAttachType},
 };
 use clap::Parser;
+use log::info;
 #[rustfmt::skip]
 use log::{debug, warn};
 use crate::network::parse_ether;
@@ -73,8 +74,8 @@ async fn main() -> anyhow::Result<()> {
 
                     let data = &raw.data[..raw.len as usize];
 
-                    println!("User space received Raw packet with length: {}", raw.len);
-                    parse_ether(data);
+                    info!("User space received Raw packet with length: {}", raw.len);
+                    let _ = parse_ether(data);
                 }
                 Ok(())
             }) {
