@@ -5,9 +5,11 @@ use aya::{
 use clap::Parser;
 #[rustfmt::skip]
 use log::{debug, warn};
+use crate::network::parse_ether;
 use quicsnoop_common::QuicPacket;
 use tokio::signal;
 
+mod network;
 mod quic;
 
 #[derive(Debug, Parser)]
@@ -51,7 +53,8 @@ async fn main() -> anyhow::Result<()> {
     let _ = tc::qdisc_add_clsact(&iface);
     let program: &mut SchedClassifier = ebpf.program_mut("quicsnoop").unwrap().try_into()?;
     program.load()?;
-    program.attach(&iface, TcAttachType::Ingress)?;
+    program.attach(&iface, TcAttachType::Egress)?;
+    // TcAttachType::Ingress
 
     // Receive packets
     tokio::spawn(async move {
@@ -71,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
                     let data = &raw.data[..raw.len as usize];
 
                     println!("User space received Raw packet with length: {}", raw.len);
+                    parse_ether(data);
                 }
                 Ok(())
             }) {

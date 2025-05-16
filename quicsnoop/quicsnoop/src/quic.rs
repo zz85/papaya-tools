@@ -12,6 +12,7 @@ use s2n_quic_core::{
 
 pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<()> {
     let mut data = [0; 1500];
+    println!("QUIC Packet len {}", packet.len());
     let decode_buffer = &mut data[..packet.len()];
     decode_buffer.copy_from_slice(packet);
 
@@ -45,14 +46,14 @@ pub fn decode_quic_initial_packet(packet: &[u8]) -> Option<()> {
     let clear_initial = intial_encrypted
         .decrypt(&initial_key)
         .map_err(|err| {
-            // info!("cannot decrypt {err}");
+            info!("cannot decrypt {err}");
             // just move on if we can't decrypt packet
         })
         .ok()?;
 
     let packet_number = clear_initial.packet_number;
-    let dcid = clear_initial.destination_connection_id().to_vec();
-    let scid = clear_initial.source_connection_id().to_vec();
+    let dcid = clear_initial.destination_connection_id();
+    let scid = clear_initial.source_connection_id();
 
     debug!("QUIC Packet version {version}. #{packet_number}. scid {scid:02x?} -> dcid {dcid:02x?}");
 
