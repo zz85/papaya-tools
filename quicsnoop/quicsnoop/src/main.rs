@@ -17,6 +17,9 @@ mod quic;
 struct Opt {
     #[clap(short, long, default_value = "eth0")]
     iface: String,
+
+    #[clap(short, long, default_value = "false")]
+    egress: bool,
 }
 
 #[tokio::main]
@@ -48,14 +51,18 @@ async fn main() -> anyhow::Result<()> {
         // This can happen if you remove all log statements from your eBPF program.
         warn!("failed to initialize eBPF logger: {e}");
     }
-    let Opt { iface } = opt;
+    let Opt { iface, egress } = opt;
+    println!("Interface: {iface}, egress: {egress}");
     // error adding clsact to the interface if it is already added is harmless
     // the full cleanup can be done with 'sudo tc qdisc del dev eth0 clsact'.
     let _ = tc::qdisc_add_clsact(&iface);
     let program: &mut SchedClassifier = ebpf.program_mut("quicsnoop").unwrap().try_into()?;
     program.load()?;
-    program.attach(&iface, TcAttachType::Egress)?;
-    // TcAttachType::Ingress
+    if egress {
+        program.attach(&iface, TcAttachType::Egress)?;
+    } else {
+        program.attach(&iface, TcAttachType::Ingress)?;
+    }
 
     // Receive packets
     tokio::spawn(async move {
