@@ -1,0 +1,18 @@
+[package]
+name = "quicsnoop-ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+quicsnoop-common = { path = "../quicsnoop-common" }
+
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+network-types = "0.0.8"
+
+[build-dependencies]
+which = { workspace = true }
+
+[[bin]]
+name = "quicsnoop"
+path = "src/main.rs"
