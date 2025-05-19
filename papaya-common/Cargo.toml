@@ -1,0 +1,15 @@
+[package]
+name = "papaya-common"
+version = "0.1.0"
+edition = "2021"
+
+license.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+# aya = { workspace = true, optional = true }
+
+[lib]
+path = "src/lib.rs"
