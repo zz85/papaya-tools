@@ -9,6 +9,8 @@ Experimental collection of eBPF / aya / network / system / tracing utilities
 | [tcc-trace](https://github.com/zz85/tcc-trace)    | Peek at congestion control changes    |
 | [snisnoop](snisnoop)     | Find processes and domains for outgoing TLS handshakes             |
 | [quicsnoop](quicsnoop)     | Find SNI of initial QUIC packets                 |
+| [ipipsnoop](ipipsnoop)   | Monitor IP-in-IP encapsulation traffic (uses XDP)            |
+| [ipswap](ipswap)         | Modify source IP addresses of selective outgoing packets (uses tcbpf-egress) |
 
 #### snisnoop - short for TLS SNI (Server Name Indication) Snoop.
 
