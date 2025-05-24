@@ -8,37 +8,53 @@ use aya_ebpf::{
     EbpfContext,
 };
 use aya_log_ebpf::info;
-use spawnsnoop_common::SpawnInfo;
+use spawnsnoop_common::{Event, SpawnInfo};
 
 #[map]
 static RINGBUF: RingBuf = RingBuf::with_byte_size(1000 * SpawnInfo::STRUCT_SIZE as u32, 0);
 
 #[tracepoint]
-pub fn trace_enter(ctx: TracePointContext) -> u32 {
-    match try_spawnsnoop(ctx, false) {
+pub fn sys_enter_exit(ctx: TracePointContext) -> u32 {
+    match try_spawnsnoop(ctx, Event::Exit) {
         Ok(ret) => ret,
         Err(ret) => ret,
     }
 }
 
 #[tracepoint]
-pub fn trace_exit(ctx: TracePointContext) -> u32 {
-    match try_spawnsnoop(ctx, true) {
+pub fn trace_exit_execve(ctx: TracePointContext) -> u32 {
+    match try_spawnsnoop(ctx, Event::ExecveDone) {
         Ok(ret) => ret,
         Err(ret) => ret,
     }
 }
 
-fn try_spawnsnoop(ctx: TracePointContext, enter: bool) -> Result<u32, u32> {
+#[tracepoint]
+pub fn sched_process_exit(ctx: TracePointContext) -> u32 {
+    match try_spawnsnoop(ctx, Event::ProcessExit) {
+        Ok(ret) => ret,
+        Err(ret) => ret,
+    }
+}
+
+#[tracepoint]
+pub fn sched_process_fork(ctx: TracePointContext) -> u32 {
+    match try_spawnsnoop(ctx, Event::ProcessFork) {
+        Ok(ret) => ret,
+        Err(ret) => ret,
+    }
+}
+
+fn try_spawnsnoop(ctx: TracePointContext, event: Event) -> Result<u32, u32> {
     info!(&ctx, "tracepoint sys_enter_execve called");
 
-    send_to_ringbuf(ctx, enter);
+    send_to_ringbuf(ctx, event);
 
     Ok(0)
 }
 
 #[inline]
-fn send_to_ringbuf(ctx: TracePointContext, enter: bool) -> bool {
+fn send_to_ringbuf(ctx: TracePointContext, event: Event) -> bool {
     let Some(mut buf) = RINGBUF.reserve::<SpawnInfo>(0) else {
         return false;
     };
@@ -50,7 +66,7 @@ fn send_to_ringbuf(ctx: TracePointContext, enter: bool) -> bool {
         info.command = cmd;
     }
 
-    info.enter = enter;
+    info.event = event;
 
     // usage of RingBufEntry requires us to submit or discard after reserving
     buf.submit(0);
