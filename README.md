@@ -11,6 +11,7 @@ Experimental collection of eBPF / aya / network / system / tracing utilities
 | [quicsnoop](quicsnoop)     | Find SNI of initial QUIC packets                 |
 | [ipipsnoop](ipipsnoop)   | Monitor IP-in-IP encapsulation traffic (uses XDP)            |
 | [ipswap](ipswap)         | Modify source IP addresses of selective outgoing packets (uses tcbpf-egress) |
+| [spawnsnoop](spawnsnoop) | Find out processes that launch and terminates, using tracepoints |
 
 #### snisnoop - short for TLS SNI (Server Name Indication) Snoop.
 
@@ -49,11 +50,13 @@ Waiting for Ctrl-C...
 Uses Tracepoint to find congestion control parameters set by the OS
 
 #### Ideas cooking..
-- spawnsnoop - find out processes that launch, similar to execsnoop
 - connection drop catcher - find out connections are dropping because process are too busy
 - tracepoint-snisnoop - but implmennted with tracepoint
 - implement sni parser in ebpf rather than user space
 - publish this as a crate
+- explore raw tracepoints and btf raw tracepoints
+- generic k/uprobe tracker
+- monitoring process state transitions
 
 #### Links
 - https://github.com/iovisor/bcc/

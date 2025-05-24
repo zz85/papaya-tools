@@ -34,13 +34,47 @@ async fn main() -> anyhow::Result<()> {
         // This can happen if you remove all log statements from your eBPF program.
         warn!("failed to initialize eBPF logger: {e}");
     }
-    let program: &mut TracePoint = ebpf.program_mut("trace_enter").unwrap().try_into()?;
+    let program: &mut TracePoint = ebpf.program_mut("sys_enter_exit").unwrap().try_into()?;
     program.load()?;
-    program.attach("syscalls", "sys_enter_execve")?;
+    program.attach("syscalls", "sys_enter_exit")?;
 
-    let program: &mut TracePoint = ebpf.program_mut("trace_exit").unwrap().try_into()?;
+    let program: &mut TracePoint = ebpf.program_mut("trace_exit_execve").unwrap().try_into()?;
     program.load()?;
     program.attach("syscalls", "sys_exit_execve")?;
+
+    let program: &mut TracePoint = ebpf.program_mut("sched_process_exit").unwrap().try_into()?;
+    program.load()?;
+    program.attach("sched", "sched_process_exit")?;
+
+    let program: &mut TracePoint = ebpf.program_mut("sched_process_fork").unwrap().try_into()?;
+    program.load()?;
+    program.attach("sched", "sched_process_fork")?;
+
+    /* Example timeline
+    - sys_enter_execve  -> Start loading program
+    - sys_exit_execve   -> Program loaded and started
+    - [Program runs...] -> Program execution
+    - sys_exit_exit     -> Program terminates
+    - sched_process_exit
+    */
+
+    // Getting tracepoints
+    // sudo ls /sys/kernel/debug/tracing/events/
+    // sudo perf list | grep Tracepoint
+    // cat /sys/kernel/debug/tracing/available_events
+    // find /sys/kernel/debug/tracing/events -name format -exec cat {} \;
+    // https://github.com/torvalds/linux/tree/5189dafa4cf950e675f02ee04b577dfbbad0d9b1/include/trace/events
+
+    // List of IDs
+    // sudo find /sys/kernel/debug/tracing/events -name format -exec cat {} \; | grep "ID:" -B 1
+
+    // some references
+    // https://ancat.github.io/kernel/2021/05/20/hooking-processes-and-threads.html
+
+    // Other tracepoints
+    //
+    // to compare against kprobes, see
+    // - wake_up_new_task, clone, fork
 
     struct SpawnInfoHandler;
 
@@ -52,16 +86,7 @@ async fn main() -> anyhow::Result<()> {
             };
 
             let command = std::str::from_utf8(&raw.command).unwrap_or("");
-            println!(
-                "{} {}: {}",
-                if raw.enter {
-                    "New process"
-                } else {
-                    "Exit process: "
-                },
-                raw.pid,
-                command
-            );
+            println!("{:?} {}: {}", raw.event, raw.pid, command);
         }
     }
 
