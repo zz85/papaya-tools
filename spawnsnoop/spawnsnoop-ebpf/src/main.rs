@@ -14,6 +14,14 @@ use spawnsnoop_common::{Event, SpawnInfo};
 static RINGBUF: RingBuf = RingBuf::with_byte_size(1000 * SpawnInfo::STRUCT_SIZE as u32, 0);
 
 #[tracepoint]
+pub fn sched_process_exec(ctx: TracePointContext) -> u32 {
+    match try_spawnsnoop(ctx, Event::ProcessExec) {
+        Ok(ret) => ret,
+        Err(ret) => ret,
+    }
+}
+
+#[tracepoint]
 pub fn sys_enter_exit(ctx: TracePointContext) -> u32 {
     match try_spawnsnoop(ctx, Event::Exit) {
         Ok(ret) => ret,
@@ -46,7 +54,8 @@ pub fn sched_process_fork(ctx: TracePointContext) -> u32 {
 }
 
 fn try_spawnsnoop(ctx: TracePointContext, event: Event) -> Result<u32, u32> {
-    info!(&ctx, "tracepoint sys_enter_execve called");
+    let common_type: u16 = unsafe { ctx.read_at(0).map_err(|e| e as u32)? };
+    info!(&ctx, "tracepoint with type {}", common_type);
 
     send_to_ringbuf(ctx, event);
 

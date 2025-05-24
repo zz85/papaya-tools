@@ -24,6 +24,7 @@ pub enum Event {
     Exit,
     ExitDone,
 
+    ProcessExec,
     ProcessFork,
     ProcessExit,
 }

@@ -50,6 +50,10 @@ async fn main() -> anyhow::Result<()> {
     program.load()?;
     program.attach("sched", "sched_process_fork")?;
 
+    let program: &mut TracePoint = ebpf.program_mut("sched_process_exec").unwrap().try_into()?;
+    program.load()?;
+    program.attach("sched", "sched_process_exec")?;
+
     /* Example timeline
     - sys_enter_execve  -> Start loading program
     - sys_exit_execve   -> Program loaded and started
@@ -72,9 +76,9 @@ async fn main() -> anyhow::Result<()> {
     // https://ancat.github.io/kernel/2021/05/20/hooking-processes-and-threads.html
 
     // Other tracepoints
-    //
+    // - acct_process
     // to compare against kprobes, see
-    // - wake_up_new_task, clone, fork
+    // - wake_up_new_task, clone, clone3, fork
 
     struct SpawnInfoHandler;
 
