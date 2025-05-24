@@ -34,9 +34,13 @@ async fn main() -> anyhow::Result<()> {
         // This can happen if you remove all log statements from your eBPF program.
         warn!("failed to initialize eBPF logger: {e}");
     }
-    let program: &mut TracePoint = ebpf.program_mut("spawnsnoop").unwrap().try_into()?;
+    let program: &mut TracePoint = ebpf.program_mut("trace_enter").unwrap().try_into()?;
     program.load()?;
     program.attach("syscalls", "sys_enter_execve")?;
+
+    let program: &mut TracePoint = ebpf.program_mut("trace_exit").unwrap().try_into()?;
+    program.load()?;
+    program.attach("syscalls", "sys_exit_execve")?;
 
     struct SpawnInfoHandler;
 
@@ -48,7 +52,16 @@ async fn main() -> anyhow::Result<()> {
             };
 
             let command = std::str::from_utf8(&raw.command).unwrap_or("");
-            println!("New Process {}: {}", raw.pid, command);
+            println!(
+                "{} {}: {}",
+                if raw.enter {
+                    "New process"
+                } else {
+                    "Exit process: "
+                },
+                raw.pid,
+                command
+            );
         }
     }
 
