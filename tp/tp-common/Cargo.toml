@@ -1,0 +1,17 @@
+[package]
+name = "tp-common"
+version = "0.1.0"
+edition = "2021"
+
+license.workspace = true
+
+[features]
+default = []
+user = ["aya"]
+
+[dependencies]
+aya = { workspace = true, optional = true }
+network-types = "0.0.8"
+
+[lib]
+path = "src/lib.rs"

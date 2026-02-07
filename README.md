@@ -50,6 +50,7 @@ Waiting for Ctrl-C...
 Uses Tracepoint to find congestion control parameters set by the OS
 
 #### Ideas cooking..
+- time process start to end in spawnsnoop, capture process info before exiting
 - connection drop catcher - find out connections are dropping because process are too busy
 - tracepoint-snisnoop - but implmennted with tracepoint
 - implement sni parser in ebpf rather than user space
